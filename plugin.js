@@ -37,6 +37,11 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
       });
 
       compilation.plugin('additional-assets', done => {
+        if (!symbolsMap.items.length) {
+          done();
+          return true;
+        }
+        
         const chunkTargetSetId = this.getSVGChunkID(svgEntryChunks);
 
         const itemsByEntry = this.getItemsByTargetSet(symbolsMap, chunkTargetSetId);
