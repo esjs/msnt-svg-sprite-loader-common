@@ -13,6 +13,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
     super();
 
     this.processOutput = params.processOutput;
+    this.options = params.options;
   }
   
   apply(compiler) {
@@ -20,8 +21,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
     const { symbols } = this.svgCompiler;
 
     let svgEntryChunks,
-        symbolsMap,
-        entryRequiredSVGs;
+        symbolsMap;
     
     compiler.plugin('this-compilation', compilation => {
       // Share plugin with loader
@@ -64,7 +64,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
               chunk.ids = [];
               chunk.files.push(filename);
 
-              compilation.assets[filename] = {
+              compilation.assets[plugin.options.publicPath + filename] = {
                 source() { return content; },
                 size() { return content.length; }
               };
