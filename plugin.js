@@ -48,29 +48,25 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
         );
         const filenames = Object.keys(itemsByEntry);
 
-        const outputConfig = this.getOutputConfig(
-          symbolsMap,
-          svgEntryChunks,
-          chunkTargetSetId
-        );
-
-        if (this.processOutput && typeof this.processOutput === 'function') {
-          this.processOutput(outputConfig);
-        }
+        const outputConfig = {};
 
         return Promise.map(filenames, filename => {
           const spriteSymbols = itemsByEntry[filename].map(item => item.symbol);
 
           if (filename.includes('[chunkcode]')) {
-            const content = spriteSymbols
-              .map(symbol => symbol.render())
-              .join('');
+            const content = spriteSymbols.map(symbol => symbol.render()).join('');
+
             const hash = hashFunc
               .createHash('md5')
               .update(content)
               .digest('hex');
+              
             filename = filename.replace('[chunkcode]', hash);
           }
+
+          spriteSymbols.forEach(symbol => {
+            outputConfig[symbol.id] = filename;
+          });
 
           return Sprite.create({ symbols: spriteSymbols }).then(sprite => {
             const content = sprite.render();
@@ -85,13 +81,17 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
               },
               size() {
                 return content.length;
-              }
+              },
             };
 
             compilation.chunks.push(chunk);
           });
         })
           .then(() => {
+            if (this.processOutput && typeof this.processOutput === 'function') {
+              this.processOutput(outputConfig);
+            }
+
             done();
             return true;
           })
@@ -114,7 +114,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
 
     for (var i in chunkTargetSetId) {
       let entrySetName = this.processChunkName(spriteFilename, {
-        index: chunkTargetSetId[i]
+        index: chunkTargetSetId[i],
       });
 
       items[entrySetName] = [];
@@ -122,7 +122,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
 
     symbolsMap.items.forEach(item => {
       let entrySetName = this.processChunkName(spriteFilename, {
-        index: chunkTargetSetId[item.resource]
+        index: chunkTargetSetId[item.resource],
       });
 
       items[entrySetName].push(item);
@@ -144,12 +144,12 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
         var sybmbols,
           curResult = result[chunk.name],
           setName = this.processChunkName(spriteFilename, {
-            index: chunkTargetSetId[svgEntry]
+            index: chunkTargetSetId[svgEntry],
           });
 
         if (!curResult) {
           curResult = result[chunk.name] = {
-            sets: []
+            sets: [],
           };
         }
 
