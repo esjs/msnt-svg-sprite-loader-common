@@ -3,37 +3,35 @@ const Sprite = require('svg-baker/lib/sprite');
 const Chunk = require('webpack/lib/Chunk');
 const Promise = require('bluebird');
 
-const {
-  MappedList,
-} = require('svg-sprite-loader/lib/utils');
+const hashFunc = require('crypto');
+
+const { MappedList } = require('svg-sprite-loader/lib/utils');
 
 class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
-
   constructor(params) {
     super();
 
     this.processOutput = params.processOutput;
     this.options = params.options;
   }
-  
+
   apply(compiler) {
     const plugin = this;
     const { symbols } = this.svgCompiler;
 
-    let svgEntryChunks,
-        symbolsMap;
-    
+    let svgEntryChunks, symbolsMap;
+
     compiler.plugin('this-compilation', compilation => {
       // Share plugin with loader
-      compilation.plugin('normal-module-loader', (loaderContext) => {
+      compilation.plugin('normal-module-loader', loaderContext => {
         loaderContext[this.NAMESPACE] = plugin;
       });
-      
+
       // all required modules are processed, time to get
       // information about svg symbols usage
       compilation.plugin('optimize', modules => {
         symbolsMap = new MappedList(symbols, compilation);
-        svgEntryChunks = this.getEntryChunks(symbolsMap.items)
+        svgEntryChunks = this.getEntryChunks(symbolsMap.items);
       });
 
       compilation.plugin('additional-assets', done => {
@@ -41,55 +39,78 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
           done();
           return true;
         }
-        
+
         const chunkTargetSetId = this.getSVGChunkID(svgEntryChunks);
 
-        const itemsByEntry = this.getItemsByTargetSet(symbolsMap, chunkTargetSetId);
+        const itemsByEntry = this.getItemsByTargetSet(
+          symbolsMap,
+          chunkTargetSetId
+        );
         const filenames = Object.keys(itemsByEntry);
-        
-        const outputConfig = this.getOutputConfig(symbolsMap, svgEntryChunks, chunkTargetSetId);
+
+        const outputConfig = this.getOutputConfig(
+          symbolsMap,
+          svgEntryChunks,
+          chunkTargetSetId
+        );
 
         if (this.processOutput && typeof this.processOutput === 'function') {
           this.processOutput(outputConfig);
         }
 
-        return Promise.map(filenames, (filename) => {
+        return Promise.map(filenames, filename => {
           const spriteSymbols = itemsByEntry[filename].map(item => item.symbol);
 
-          return Sprite.create({ symbols: spriteSymbols })
-            .then((sprite) => {
-              const content = sprite.render();
-              const chunkName = filename.replace(/\.svg$/, '');
-              const chunk = new Chunk(chunkName);
-              chunk.ids = [];
-              chunk.files.push(filename);
+          if (filename.includes('[chunkcode]')) {
+            const content = spriteSymbols
+              .map(symbol => symbol.render())
+              .join('');
+            const hash = hashFunc
+              .createHash('md5')
+              .update(content)
+              .digest('hex');
+            filename = filename.replace('[chunkcode]', hash);
+          }
 
-              compilation.assets[plugin.options.publicPath + filename] = {
-                source() { return content; },
-                size() { return content.length; }
-              };
+          return Sprite.create({ symbols: spriteSymbols }).then(sprite => {
+            const content = sprite.render();
+            const chunkName = filename.replace(/\.svg$/, '');
+            const chunk = new Chunk(chunkName);
+            chunk.ids = [];
+            chunk.files.push(filename);
 
-              compilation.chunks.push(chunk);
-            });
-        }).then(() => {
-          done();
-          return true;
-        }).catch(e => done(e));
+            compilation.assets[plugin.options.publicPath + filename] = {
+              source() {
+                return content;
+              },
+              size() {
+                return content.length;
+              }
+            };
+
+            compilation.chunks.push(chunk);
+          });
+        })
+          .then(() => {
+            done();
+            return true;
+          })
+          .catch(e => done(e));
       });
     });
   }
 
   /**
    * Generates structure required to create sprite files
-   * 
-   * @param {MappedList} symbolsMap 
-   * @param {Object} chunkTargetSetId 
+   *
+   * @param {MappedList} symbolsMap
+   * @param {Object} chunkTargetSetId
    * @return {Object}
    */
   getItemsByTargetSet(symbolsMap, chunkTargetSetId) {
     // since we have only one sprite rule, we can just use first spriteFilename
     var spriteFilename = symbolsMap.items[0].spriteFilename,
-        items = {};
+      items = {};
 
     for (var i in chunkTargetSetId) {
       let entrySetName = this.processChunkName(spriteFilename, {
@@ -112,23 +133,23 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
 
   getOutputConfig(symbolsMap, svgEntryChunks, chunkTargetSetId) {
     var sybmbolItems = symbolsMap.items,
-        spriteFilename = sybmbolItems[0].spriteFilename,
-        symbolsBySvgEntry = {},
-        result = {};
+      spriteFilename = sybmbolItems[0].spriteFilename,
+      symbolsBySvgEntry = {},
+      result = {};
 
     for (var svgEntry in svgEntryChunks) {
       var chunks = svgEntryChunks[svgEntry];
 
       chunks.forEach(chunk => {
         var sybmbols,
-            curResult = result[chunk.name],
-            setName = this.processChunkName(spriteFilename, {
-              index: chunkTargetSetId[svgEntry]
-            });
+          curResult = result[chunk.name],
+          setName = this.processChunkName(spriteFilename, {
+            index: chunkTargetSetId[svgEntry]
+          });
 
         if (!curResult) {
           curResult = result[chunk.name] = {
-            sets: [],
+            sets: []
           };
         }
 
@@ -144,7 +165,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
           curResult[symbol] = setName;
         });
 
-        curResult.sets.push(setName)
+        curResult.sets.push(setName);
       });
     }
 
@@ -155,14 +176,14 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
     for (var i in params) {
       chunkName = chunkName.replace(`[${i}]`, params[i]);
     }
-    
+
     return chunkName;
   }
 
   /**
    * Finds entry chunks for each SVG file
-   * 
-   * @param {Array} requiredSVG 
+   *
+   * @param {Array} requiredSVG
    * @return {Object}
    */
   getEntryChunks(requiredSVG) {
@@ -170,7 +191,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
 
     requiredSVG.forEach(svg => {
       const path = svg.resource,
-            svgModule = svg.module;
+        svgModule = svg.module;
 
       result[path] = new Set();
 
@@ -189,23 +210,22 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
       });
     });
 
-
     return result;
   }
 
   /**
    * Calculates result collection index for every SVG file
-   * 
-   * @param {Object} svgEntryChunk 
+   *
+   * @param {Object} svgEntryChunk
    * @return {Object}
    */
   getSVGChunkID(svgEntryChunk) {
     var svgChunks = {},
-        uniqueChunkNames = {},
-        curIndex = 0;
+      uniqueChunkNames = {},
+      curIndex = 0;
 
     for (var i in svgEntryChunk) {
-      let tempName = this.getUniqueCommonChunksName(svgEntryChunk[i]); 
+      let tempName = this.getUniqueCommonChunksName(svgEntryChunk[i]);
 
       if (tempName in uniqueChunkNames) {
         svgChunks[i] = uniqueChunkNames[tempName];
@@ -219,8 +239,8 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
 
   /**
    * Returns unique identifier for set of chunks by their name
-   * 
-   * @param {Map} chunks 
+   *
+   * @param {Map} chunks
    * @return {string}
    */
   getUniqueCommonChunksName(chunks) {

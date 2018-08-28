@@ -1,11 +1,9 @@
 {
   "name": "msnt-svg-sprite-loader-common",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "",
   "main": "loader.js",
-  "scripts": {
-    
-  },
+  "scripts": {},
   "keywords": [],
   "author": "",
   "license": "ISC",
