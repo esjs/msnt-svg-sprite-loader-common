@@ -3,6 +3,8 @@ const Sprite = require('svg-baker/lib/sprite');
 const Chunk = require('webpack/lib/Chunk');
 const Promise = require('bluebird');
 
+const hashFunc = require('crypto');
+
 const { MappedList } = require('svg-sprite-loader/lib/utils');
 
 class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
@@ -36,8 +38,6 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
           const usageMap = this.svgCompiler.usageMap;
           symbolsMap = new MappedList(symbols, compilation);
           svgEntryChunks = this.svgCompiler.usageMap;
-
-          // this.getEntryChunks(symbolsMap.items);
         });
 
         compilation.hooks.additionalAssets.tapAsync(
@@ -56,23 +56,29 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
             );
             const filenames = Object.keys(itemsByEntry);
 
-            const outputConfig = this.getOutputConfig(
-              symbolsMap,
-              svgEntryChunks,
-              chunkTargetSetId
-            );
-
-            if (
-              this.processOutput &&
-              typeof this.processOutput === 'function'
-            ) {
-              this.processOutput(outputConfig);
-            }
+            const outputConfig = {};
 
             return Promise.map(filenames, filename => {
               const spriteSymbols = itemsByEntry[filename].map(
                 item => item.symbol
               );
+
+              if (filename.includes('[chunkcode]')) {
+                const content = spriteSymbols
+                  .map(symbol => symbol.render())
+                  .join('');
+
+                const hash = hashFunc
+                  .createHash('md5')
+                  .update(content)
+                  .digest('hex');
+
+                filename = filename.replace('[chunkcode]', hash);
+              }
+
+              spriteSymbols.forEach(symbol => {
+                outputConfig[symbol.id] = filename;
+              });
 
               return Sprite.create({ symbols: spriteSymbols }).then(sprite => {
                 const content = sprite.render();
@@ -94,6 +100,13 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
               });
             })
               .then(() => {
+                if (
+                  this.processOutput &&
+                  typeof this.processOutput === 'function'
+                ) {
+                  this.processOutput(outputConfig);
+                }
+
                 done();
                 return true;
               })
