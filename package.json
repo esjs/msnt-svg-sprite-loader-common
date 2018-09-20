@@ -8,6 +8,6 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "svg-sprite-loader": "^3.8.0"
+    "svg-sprite-loader": "^3.9.0"
   }
 }

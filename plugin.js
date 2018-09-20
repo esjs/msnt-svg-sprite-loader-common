@@ -7,6 +7,8 @@ const hashFunc = require('crypto');
 
 const { MappedList } = require('svg-sprite-loader/lib/utils');
 
+let mappingCache = {};
+
 class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
   constructor(params) {
     super();
@@ -93,7 +95,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
                   },
                   size() {
                     return content.length;
-                  }
+                  },
                 };
 
                 compilation.chunks.push(chunk);
@@ -104,7 +106,8 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
                   this.processOutput &&
                   typeof this.processOutput === 'function'
                 ) {
-                  this.processOutput(outputConfig);
+                  mappingCache = Object.assign(mappingCache, outputConfig);
+                  this.processOutput(mappingCache);
                 }
 
                 done();
@@ -131,7 +134,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
 
     for (var i in chunkTargetSetId) {
       let entrySetName = this.processChunkName(spriteFilename, {
-        index: chunkTargetSetId[i]
+        index: chunkTargetSetId[i],
       });
 
       items[entrySetName] = [];
@@ -139,7 +142,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
 
     symbolsMap.items.forEach(item => {
       let entrySetName = this.processChunkName(spriteFilename, {
-        index: chunkTargetSetId[item.resource]
+        index: chunkTargetSetId[item.resource],
       });
 
       items[entrySetName].push(item);
@@ -161,12 +164,12 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
         var sybmbols,
           curResult = result[chunk.name],
           setName = this.processChunkName(spriteFilename, {
-            index: chunkTargetSetId[svgEntry]
+            index: chunkTargetSetId[svgEntry],
           });
 
         if (!curResult) {
           curResult = result[chunk.name] = {
-            sets: []
+            sets: [],
           };
         }
 
