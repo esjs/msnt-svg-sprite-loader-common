@@ -4,7 +4,7 @@ const MSNTSVGSpritePluginCommon = require('msnt-svg-sprite-loader-common/plugin'
 
 const { getOptions } = require('loader-utils');
 
-module.exports = function(content) {
+module.exports = function (content) {
   const options = getOptions(this);
 
   const loaderContext = this;
@@ -14,11 +14,11 @@ module.exports = function(content) {
     ? compiler.parentCompilation.compiler
     : null;
 
-  const plugin = parentCompiler
-    ? parentCompiler.options.plugins.find(
-      p => p instanceof MSNTSVGSpritePluginCommon
-    )
-    : this[NAMESPACE];
+  let targetCompiler = parentCompiler ?? compiler;
+
+  const plugin = targetCompiler.options.plugins.find(
+    (p) => p instanceof MSNTSVGSpritePluginCommon
+  );
 
   let iconUsageMap = plugin.svgCompiler.usageMap;
 

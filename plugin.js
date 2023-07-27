@@ -1,3 +1,5 @@
+const { NormalModule } = require('webpack');
+
 const SVGSpritePlugin = require('svg-sprite-loader/plugin');
 const Sprite = require('svg-baker/lib/sprite');
 const Chunk = require('webpack/lib/Chunk');
@@ -17,6 +19,9 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
     this.options = params.options;
   }
 
+  /**
+   * @param {import('webpack').Compiler} compiler
+   */
   apply(compiler) {
     const plugin = this;
     const { symbols } = this.svgCompiler;
@@ -25,26 +30,29 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
 
     compiler.hooks.thisCompilation.tap(
       'MSNTSVGSpritePluginCommon',
-      compilation => {
+      (compilation) => {
         // Share plugin with loader
-        compilation.hooks.normalModuleLoader.tap(
+        NormalModule.getCompilationHooks(compilation).loader.tap(
           'MSNTSVGSpritePluginCommon',
-          loaderContext => {
+          (loaderContext) => {
             loaderContext[this.NAMESPACE] = plugin;
           }
         );
 
         // all required modules are processed, time to get
         // information about svg symbols usage
-        compilation.hooks.optimize.tap('MSNTSVGSpritePluginCommon', modules => {
-          const usageMap = this.svgCompiler.usageMap;
-          symbolsMap = new MappedList(symbols, compilation);
-          svgEntryChunks = this.svgCompiler.usageMap;
-        });
+        compilation.hooks.optimizeModules.tap(
+          'MSNTSVGSpritePluginCommon',
+          (modules) => {
+            const usageMap = this.svgCompiler.usageMap;
+            symbolsMap = new MappedList(symbols, compilation);
+            svgEntryChunks = this.svgCompiler.usageMap;
+          }
+        );
 
         compilation.hooks.additionalAssets.tapAsync(
           'MSNTSVGSpritePluginCommon',
-          done => {
+          (done) => {
             if (!symbolsMap.items.length) {
               done();
               return true;
@@ -60,14 +68,14 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
 
             const outputConfig = {};
 
-            return Promise.map(filenames, filename => {
+            return Promise.map(filenames, (filename) => {
               const spriteSymbols = itemsByEntry[filename].map(
-                item => item.symbol
+                (item) => item.symbol
               );
 
               if (filename.includes('[chunkcode]')) {
                 const content = spriteSymbols
-                  .map(symbol => symbol.render())
+                  .map((symbol) => symbol.render())
                   .join('');
 
                 const hash = hashFunc
@@ -78,28 +86,31 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
                 filename = filename.replace('[chunkcode]', hash);
               }
 
-              spriteSymbols.forEach(symbol => {
+              spriteSymbols.forEach((symbol) => {
                 outputConfig[symbol.id] = filename;
               });
 
-              return Sprite.create({ symbols: spriteSymbols }).then(sprite => {
-                const content = sprite.render();
-                const chunkName = filename.replace(/\.svg$/, '');
-                const chunk = new Chunk(chunkName);
-                chunk.ids = [];
-                chunk.files.push(filename);
+              return Sprite.create({ symbols: spriteSymbols }).then(
+                (sprite) => {
+                  const content = sprite.render();
+                  const chunkName = filename.replace(/\.svg$/, '');
+                  debugger;
+                  const chunk = new Chunk(chunkName);
+                  chunk.ids = [];
+                  chunk.files.add(filename);
 
-                compilation.assets[plugin.options.publicPath + filename] = {
-                  source() {
-                    return content;
-                  },
-                  size() {
-                    return content.length;
-                  },
-                };
+                  compilation.assets[plugin.options.publicPath + filename] = {
+                    source() {
+                      return content;
+                    },
+                    size() {
+                      return content.length;
+                    },
+                  };
 
-                compilation.chunks.push(chunk);
-              });
+                  compilation.chunks.add(chunk);
+                }
+              );
             })
               .then(() => {
                 if (
@@ -107,13 +118,13 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
                   typeof this.processOutput === 'function'
                 ) {
                   mappingCache = Object.assign(mappingCache, outputConfig);
-                  this.processOutput(mappingCache);
+                  this.processOutput(compilation, mappingCache, plugin.options);
                 }
 
                 done();
                 return true;
               })
-              .catch(e => done(e));
+              .catch((e) => done(e));
           }
         );
       }
@@ -140,7 +151,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
       items[entrySetName] = [];
     }
 
-    symbolsMap.items.forEach(item => {
+    symbolsMap.items.forEach((item) => {
       let entrySetName = this.processChunkName(spriteFilename, {
         index: chunkTargetSetId[item.resource],
       });
@@ -160,7 +171,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
     for (var svgEntry in svgEntryChunks) {
       var chunks = svgEntryChunks[svgEntry];
 
-      chunks.forEach(chunk => {
+      chunks.forEach((chunk) => {
         var sybmbols,
           curResult = result[chunk.name],
           setName = this.processChunkName(spriteFilename, {
@@ -175,13 +186,13 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
 
         if (!symbolsBySvgEntry[svgEntry]) {
           symbolsBySvgEntry[svgEntry] = sybmbolItems
-            .filter(item => item.resource === svgEntry)
-            .map(item => item.symbol.id);
+            .filter((item) => item.resource === svgEntry)
+            .map((item) => item.symbol.id);
         }
 
         sybmbols = symbolsBySvgEntry[svgEntry];
 
-        sybmbols.forEach(symbol => {
+        sybmbols.forEach((symbol) => {
           curResult[symbol] = setName;
         });
 
@@ -209,13 +220,13 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
   getEntryChunks(requiredSVG) {
     const result = {};
 
-    requiredSVG.forEach(svg => {
+    requiredSVG.forEach((svg) => {
       const path = svg.resource,
         svgModule = svg.module;
 
       result[path] = new Set();
 
-      svgModule.reasons.forEach(reason => {
+      svgModule.reasons.forEach((reason) => {
         let module = reason.module;
 
         const chunks = module.getChunks();
@@ -231,8 +242,6 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
         result[path].add(chunks[0]);
       });
     });
-
-    debugger;
 
     return result;
   }
@@ -269,7 +278,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
    */
   getUniqueCommonChunksName(chunks) {
     return Array.from(chunks)
-      .map(chunk => chunk.name)
+      .map((chunk) => chunk.name)
       .join('&');
   }
 }
