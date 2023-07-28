@@ -20,29 +20,7 @@ module.exports = function (content) {
     (p) => p instanceof MSNTSVGSpritePluginCommon
   );
 
-  let iconUsageMap = plugin.svgCompiler.usageMap;
-
-  let entryName;
-
-  if (options && options.optimize) {
-    let module = this._module;
-    while (module.issuer) {
-      module = module.issuer;
-    }
-    entryName = path.basename(module.resource, '.css');
-  } else {
-    entryName = 'single-entry';
-  }
-
-  if (!iconUsageMap) {
-    iconUsageMap = plugin.svgCompiler.usageMap = {};
-  }
-
-  if (!iconUsageMap[this.resourcePath]) {
-    iconUsageMap[this.resourcePath] = [entryName];
-  } else if (options && options.optimize) {
-    iconUsageMap[this.resourcePath].push(entryName);
-  }
+  plugin.msntLoaderOptions = options;
 
   return content;
 };

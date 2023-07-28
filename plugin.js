@@ -1,4 +1,6 @@
-const { NormalModule } = require('webpack');
+const path = require('node:path');
+
+const { NormalModule, Compilation } = require('webpack');
 
 const SVGSpritePlugin = require('svg-sprite-loader/plugin');
 const Sprite = require('svg-baker/lib/sprite');
@@ -26,11 +28,15 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
     const plugin = this;
     const { symbols } = this.svgCompiler;
 
-    let svgEntryChunks, symbolsMap;
+    let svgEntryChunks = new Map(),
+      symbolsMap;
+    let loaerOptions = {};
 
     compiler.hooks.thisCompilation.tap(
       'MSNTSVGSpritePluginCommon',
       (compilation) => {
+        const entries = compilation.options.entry;
+
         // Share plugin with loader
         NormalModule.getCompilationHooks(compilation).loader.tap(
           'MSNTSVGSpritePluginCommon',
@@ -44,9 +50,39 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
         compilation.hooks.optimizeModules.tap(
           'MSNTSVGSpritePluginCommon',
           (modules) => {
-            const usageMap = this.svgCompiler.usageMap;
             symbolsMap = new MappedList(symbols, compilation);
-            svgEntryChunks = this.svgCompiler.usageMap;
+          }
+        );
+
+        compilation.hooks.chunkAsset.tap(
+          'MSNTSVGSpritePluginCommon',
+          (chunk, fileName) => {
+            const baseName = path.basename(fileName, '.css');
+            if (!entries[baseName]) return;
+
+            let entryName = plugin.msntLoaderOptions?.optimize
+              ? baseName
+              : 'single-entry';
+
+            const paths = [...chunk.auxiliaryFiles].filter((name) =>
+              name.endsWith('.svg')
+            );
+
+            const icons = paths.map((n) => {
+              const {
+                options: { context },
+              } = compilation;
+              const name = compilation.getAsset(n).info.sourceFilename;
+
+              return path.join(context, name);
+            });
+
+            icons.forEach((icon) => {
+              if (!svgEntryChunks.has(icon)) {
+                svgEntryChunks.set(icon, new Set());
+              }
+              svgEntryChunks.get(icon).add(entryName);
+            });
           }
         );
 
@@ -94,7 +130,6 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
                 (sprite) => {
                   const content = sprite.render();
                   const chunkName = filename.replace(/\.svg$/, '');
-                  debugger;
                   const chunk = new Chunk(chunkName);
                   chunk.ids = [];
                   chunk.files.add(filename);
@@ -249,7 +284,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
   /**
    * Calculates result collection index for every SVG file
    *
-   * @param {Object} svgEntryChunk
+   * @param {Map<string, Set<string>>} svgEntryChunk
    * @return {Object}
    */
   getSVGChunkID(svgEntryChunk) {
@@ -257,13 +292,13 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
       uniqueChunkNames = {},
       curIndex = 0;
 
-    for (var i in svgEntryChunk) {
-      let tempName = this.getUniqueCommonChunksName(svgEntryChunk[i]);
+    for (const [name, values] of svgEntryChunk.entries()) {
+      let tempName = this.getUniqueCommonChunksName(values);
 
       if (tempName in uniqueChunkNames) {
-        svgChunks[i] = uniqueChunkNames[tempName];
+        svgChunks[name] = uniqueChunkNames[tempName];
       } else {
-        svgChunks[i] = uniqueChunkNames[tempName] = curIndex++;
+        svgChunks[name] = uniqueChunkNames[tempName] = curIndex++;
       }
     }
 
@@ -273,13 +308,11 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
   /**
    * Returns unique identifier for set of chunks by their name
    *
-   * @param {Map} chunks
+   * @param {Set<string>} chunks
    * @return {string}
    */
-  getUniqueCommonChunksName(chunks) {
-    return Array.from(chunks)
-      .map((chunk) => chunk.name)
-      .join('&');
+  getUniqueCommonChunksName(entries) {
+    return Array.from(entries).join('&');
   }
 }
 
