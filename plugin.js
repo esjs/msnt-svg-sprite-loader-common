@@ -57,8 +57,9 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
         compilation.hooks.chunkAsset.tap(
           'MSNTSVGSpritePluginCommon',
           (chunk, fileName) => {
+            if (!fileName.endsWith('.css')) return;
+
             const baseName = path.basename(fileName, '.css');
-            if (!entries[baseName]) return;
 
             let entryName = plugin.msntLoaderOptions?.optimize
               ? baseName
