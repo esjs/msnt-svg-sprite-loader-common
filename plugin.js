@@ -13,7 +13,7 @@ const { MappedList } = require('svg-sprite-loader/lib/utils');
 
 // load .svg from any location except from inside fonts folder
 // [\/\\] - macOS/Windows difference fix
-const iconRegExp = /(?<!fonts[\/\\])\.svg$/;
+const iconRegExp = /(?<!fonts[\/\\].*)\.svg$/;
 
 /** @type {Map<string, boolean>} */
 const assetsTypeCacheMap = new Map();
