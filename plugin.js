@@ -11,160 +11,241 @@ const hashFunc = require('crypto');
 
 const { MappedList } = require('svg-sprite-loader/lib/utils');
 
-let mappingCache = {};
+// load .svg from any location except from inside fonts folder
+// [\/\\] - macOS/Windows difference fix
+const iconRegExp = /(?<!fonts[\/\\])\.svg$/;
+
+/** @type {Map<string, boolean>} */
+const assetsTypeCacheMap = new Map();
 
 class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
   constructor(params) {
     super();
 
     this.processOutput = params.processOutput;
-    this.options = params.options;
+    this.options = {
+      /**
+       * Whether split into multiple chunks should be enabled
+       *
+       * This will automatically set to true for production env
+       */
+      optimize: null,
+      /**
+       * RegExp which should check whether asses is an icon.
+       *
+       * Set to non RegExp to skip check.
+       */
+      iconRegExp,
+      /**
+       * Whether original assets should be removed
+       */
+      removeIconAssets: true,
+      /**
+       * Pattern for output file name.
+       *
+       * This will be set im
+       * compiler.hooks.thisCompilation.tap
+       * if no default value is provided
+       */
+      spriteFilename: null,
+      spriteFilenameDev: 'sprite-common-with-cache-[index].svg',
+      spriteFilenameProd: 'sprite-common-with-cache-[index]-[chunkcode].svg',
+      ...params.options,
+    };
   }
 
   /**
    * @param {import('webpack').Compiler} compiler
    */
   apply(compiler) {
-    const plugin = this;
-    const { symbols } = this.svgCompiler;
-
-    let svgEntryChunks = new Map(),
-      symbolsMap;
-    let loaerOptions = {};
-
     compiler.hooks.thisCompilation.tap(
       'MSNTSVGSpritePluginCommon',
       (compilation) => {
-        const entries = compilation.options.entry;
+        const isProd = compilation.options.mode === 'production';
 
-        // Share plugin with loader
-        NormalModule.getCompilationHooks(compilation).loader.tap(
-          'MSNTSVGSpritePluginCommon',
-          (loaderContext) => {
-            loaderContext[this.NAMESPACE] = plugin;
-          }
-        );
+        if (!this.options.spriteFilename) {
+          this.options.spriteFilename = isProd
+            ? this.options.spriteFilenameProd
+            : this.options.spriteFilenameDev;
+        }
 
-        // all required modules are processed, time to get
-        // information about svg symbols usage
-        compilation.hooks.optimizeModules.tap(
-          'MSNTSVGSpritePluginCommon',
-          (modules) => {
-            symbolsMap = new MappedList(symbols, compilation);
-          }
-        );
+        if (this.options.optimize === null) {
+          this.options.optimize = isProd ? true : false;
+        }
 
-        compilation.hooks.chunkAsset.tap(
-          'MSNTSVGSpritePluginCommon',
-          (chunk, fileName) => {
-            if (!fileName.endsWith('.css')) return;
+        compilation.hooks.processAssets.tapAsync(
+          {
+            name: 'MyPlugin',
+            stage: Compilation.PROCESS_ASSETS_STAGE_ADDITIONS,
+          },
+          async (assets, done) => {
+            const svgEntryChunks = this.getEntryChunks(compilation);
 
-            const baseName = path.basename(fileName, '.css');
+            const symbolsMap = await this.getSymbolsMap(assets, compilation);
 
-            let entryName = plugin.msntLoaderOptions?.optimize
-              ? baseName
-              : 'single-entry';
+            if (!symbolsMap.items.length) return done();
 
-            const paths = [...chunk.auxiliaryFiles].filter((name) =>
-              name.endsWith('.svg')
-            );
-
-            const icons = paths.map((n) => {
-              const {
-                options: { context },
-              } = compilation;
-              const name = compilation.getAsset(n).info.sourceFilename;
-
-              return path.join(context, name);
-            });
-
-            icons.forEach((icon) => {
-              if (!svgEntryChunks.has(icon)) {
-                svgEntryChunks.set(icon, new Set());
-              }
-              svgEntryChunks.get(icon).add(entryName);
-            });
-          }
-        );
-
-        compilation.hooks.additionalAssets.tapAsync(
-          'MSNTSVGSpritePluginCommon',
-          (done) => {
-            if (!symbolsMap.items.length) {
-              done();
-              return true;
-            }
-
-            const chunkTargetSetId = this.getSVGChunkID(svgEntryChunks);
-
-            const itemsByEntry = this.getItemsByTargetSet(
+            await this.proccessAndOutput(
+              compilation,
+              svgEntryChunks,
               symbolsMap,
-              chunkTargetSetId
+              done
             );
-            const filenames = Object.keys(itemsByEntry);
-
-            const outputConfig = {};
-
-            return Promise.map(filenames, (filename) => {
-              const spriteSymbols = itemsByEntry[filename].map(
-                (item) => item.symbol
-              );
-
-              if (filename.includes('[chunkcode]')) {
-                const content = spriteSymbols
-                  .map((symbol) => symbol.render())
-                  .join('');
-
-                const hash = hashFunc
-                  .createHash('md5')
-                  .update(content)
-                  .digest('hex');
-
-                filename = filename.replace('[chunkcode]', hash);
-              }
-
-              spriteSymbols.forEach((symbol) => {
-                outputConfig[symbol.id] = filename;
-              });
-
-              return Sprite.create({ symbols: spriteSymbols }).then(
-                (sprite) => {
-                  const content = sprite.render();
-                  const chunkName = filename.replace(/\.svg$/, '');
-                  const chunk = new Chunk(chunkName);
-                  chunk.ids = [];
-                  chunk.files.add(filename);
-
-                  compilation.assets[plugin.options.publicPath + filename] = {
-                    source() {
-                      return content;
-                    },
-                    size() {
-                      return content.length;
-                    },
-                  };
-
-                  compilation.chunks.add(chunk);
-                }
-              );
-            })
-              .then(() => {
-                if (
-                  this.processOutput &&
-                  typeof this.processOutput === 'function'
-                ) {
-                  mappingCache = Object.assign(mappingCache, outputConfig);
-                  this.processOutput(compilation, mappingCache, plugin.options);
-                }
-
-                done();
-                return true;
-              })
-              .catch((e) => done(e));
           }
         );
       }
     );
+  }
+
+  /**
+   * Calculates which entry chunks use which icons
+   *
+   * @param {import('webpack').Compilation} compilation
+   * @returns {Map<string, Set<string>>}
+   */
+  getEntryChunks(compilation) {
+    const { context } = compilation.options;
+
+    const svgEntryChunks = new Map();
+
+    compilation.chunks.forEach((chunk) => {
+      let entryName = this.options.optimize ? chunk.name : 'single-entry';
+
+      const paths = [...chunk.auxiliaryFiles].filter(
+        this.isIconAsset.bind(this)
+      );
+
+      const icons = paths.map((n) => {
+        const name = compilation.getAsset(n).info.sourceFilename;
+
+        return path.join(context, name);
+      });
+
+      icons.forEach((icon) => {
+        if (!svgEntryChunks.has(icon)) {
+          svgEntryChunks.set(icon, new Set());
+        }
+        svgEntryChunks.get(icon).add(entryName);
+      });
+    });
+
+    return svgEntryChunks;
+  }
+
+  /**
+   * @param {object} assets
+   * @param {import('webpack').Compilation} compilation
+   * @returns { MappedList }
+   */
+  async getSymbolsMap(assets, compilation) {
+    const { context } = compilation.options;
+
+    await Promise.all(
+      Object.entries(assets)
+        .filter(([pathname]) => this.isIconAsset(pathname))
+        .map(([pathname, source]) => {
+          const assetInfo = compilation.assetsInfo.get(pathname);
+
+          if (this.options.removeIconAssets) {
+            compilation.deleteAsset(pathname);
+          }
+
+          const id = path.basename(assetInfo.sourceFilename, '.svg');
+          const iconPath = path.join(context, assetInfo.sourceFilename);
+
+          return this.svgCompiler.addSymbol({
+            id,
+            path: iconPath,
+            content: source.source().toString(),
+          });
+        })
+    );
+
+    return new MappedList(this.svgCompiler.symbols, compilation);
+  }
+
+  /**
+   *
+   * @param { import('webpack').Compilation } compilation
+   * @param { Map<string, Set<string>> } svgEntryChunks
+   * @param { MappedList } symbolsMap
+   * @param { * } done
+   */
+  proccessAndOutput(compilation, svgEntryChunks, symbolsMap, done) {
+    const chunkTargetSetId = this.getSVGChunkID(svgEntryChunks);
+
+    const itemsByEntry = this.getItemsByTargetSet(symbolsMap, chunkTargetSetId);
+    const filenames = Object.keys(itemsByEntry);
+
+    const outputConfig = {};
+
+    Promise.map(filenames, (filename) => {
+      const spriteSymbols = itemsByEntry[filename].map((item) => item.symbol);
+
+      if (filename.includes('[chunkcode]')) {
+        const content = spriteSymbols.map((symbol) => symbol.render()).join('');
+
+        const hash = hashFunc.createHash('md5').update(content).digest('hex');
+
+        filename = filename.replace('[chunkcode]', hash);
+      }
+
+      spriteSymbols.forEach((symbol) => {
+        outputConfig[symbol.id] = filename;
+      });
+
+      return Sprite.create({ symbols: spriteSymbols }).then((sprite) => {
+        const content = sprite.render();
+        const chunkName = filename.replace(/\.svg$/, '');
+        const chunk = new Chunk(chunkName);
+        chunk.ids = [];
+        chunk.files.add(filename);
+
+        compilation.assets[this.options.publicPath + filename] = {
+          source() {
+            return content;
+          },
+          size() {
+            return content.length;
+          },
+        };
+
+        compilation.chunks.add(chunk);
+      });
+    })
+      .then(() => {
+        if (this.processOutput && typeof this.processOutput === 'function') {
+          this.processOutput(compilation, outputConfig, this.options);
+        }
+
+        done();
+        return true;
+      })
+      .catch((e) => done(e));
+  }
+
+  /**
+   * Checks whether asset is an SVG icon
+   *
+   * @param {string} path
+   * @returns {boolean}
+   */
+  isIconAsset(path) {
+    const cachedResult = assetsTypeCacheMap.get(path);
+
+    if (cachedResult === true) return true;
+
+    let result = false;
+
+    if (path.endsWith('.svg')) {
+      if (this.options.iconRegExp instanceof RegExp) {
+        result = this.options.iconRegExp.test(path);
+      }
+    }
+
+    assetsTypeCacheMap.set(path, result);
+
+    return result;
   }
 
   /**
@@ -176,7 +257,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
    */
   getItemsByTargetSet(symbolsMap, chunkTargetSetId) {
     // since we have only one sprite rule, we can just use first spriteFilename
-    var spriteFilename = symbolsMap.items[0].spriteFilename,
+    var spriteFilename = this.options.spriteFilename,
       items = {};
 
     for (var i in chunkTargetSetId) {
@@ -198,88 +279,12 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
     return items;
   }
 
-  getOutputConfig(symbolsMap, svgEntryChunks, chunkTargetSetId) {
-    var sybmbolItems = symbolsMap.items,
-      spriteFilename = sybmbolItems[0].spriteFilename,
-      symbolsBySvgEntry = {},
-      result = {};
-
-    for (var svgEntry in svgEntryChunks) {
-      var chunks = svgEntryChunks[svgEntry];
-
-      chunks.forEach((chunk) => {
-        var sybmbols,
-          curResult = result[chunk.name],
-          setName = this.processChunkName(spriteFilename, {
-            index: chunkTargetSetId[svgEntry],
-          });
-
-        if (!curResult) {
-          curResult = result[chunk.name] = {
-            sets: [],
-          };
-        }
-
-        if (!symbolsBySvgEntry[svgEntry]) {
-          symbolsBySvgEntry[svgEntry] = sybmbolItems
-            .filter((item) => item.resource === svgEntry)
-            .map((item) => item.symbol.id);
-        }
-
-        sybmbols = symbolsBySvgEntry[svgEntry];
-
-        sybmbols.forEach((symbol) => {
-          curResult[symbol] = setName;
-        });
-
-        curResult.sets.push(setName);
-      });
-    }
-
-    return result;
-  }
-
   processChunkName(chunkName, params) {
     for (var i in params) {
       chunkName = chunkName.replace(`[${i}]`, params[i]);
     }
 
     return chunkName;
-  }
-
-  /**
-   * Finds entry chunks for each SVG file
-   *
-   * @param {Array} requiredSVG
-   * @return {Object}
-   */
-  getEntryChunks(requiredSVG) {
-    const result = {};
-
-    requiredSVG.forEach((svg) => {
-      const path = svg.resource,
-        svgModule = svg.module;
-
-      result[path] = new Set();
-
-      svgModule.reasons.forEach((reason) => {
-        let module = reason.module;
-
-        const chunks = module.getChunks();
-
-        while (module.issuer) {
-          module = module.issuer;
-        }
-
-        if (!chunks || chunks > 0) {
-          new Error(`Cannot find entry chunk for module "${module.resource}"`);
-        }
-
-        result[path].add(chunks[0]);
-      });
-    });
-
-    return result;
   }
 
   /**
