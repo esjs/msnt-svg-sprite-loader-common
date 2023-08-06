@@ -48,8 +48,8 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
        * if no default value is provided
        */
       spriteFilename: null,
-      spriteFilenameDev: 'sprite-common-with-cache-[index].svg',
-      spriteFilenameProd: 'sprite-common-with-cache-[index]-[chunkcode].svg',
+      spriteFilenameDev: 'sprite-common-[index].svg',
+      spriteFilenameProd: 'sprite-common-[index]-[chunkcode].svg',
       ...params.options,
     };
   }
