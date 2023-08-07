@@ -1,6 +1,6 @@
 const path = require('node:path');
 
-const { NormalModule, Compilation } = require('webpack');
+const { Compilation } = require('webpack');
 
 const SVGSpritePlugin = require('svg-sprite-loader/plugin');
 const Sprite = require('svg-baker/lib/sprite');
@@ -75,7 +75,7 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
 
         compilation.hooks.processAssets.tapAsync(
           {
-            name: 'MyPlugin',
+            name: 'MSNTSVGSpritePluginCommon',
             stage: Compilation.PROCESS_ASSETS_STAGE_ADDITIONS,
           },
           async (assets, done) => {
