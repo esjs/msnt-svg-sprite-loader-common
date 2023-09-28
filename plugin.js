@@ -227,23 +227,27 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
   /**
    * Checks whether asset is an SVG icon
    *
-   * @param {string} path
+   * @param {string} iconPath
    * @returns {boolean}
    */
-  isIconAsset(path) {
-    const cachedResult = assetsTypeCacheMap.get(path);
+  isIconAsset(iconPath) {
+    const cachedResult = assetsTypeCacheMap.get(iconPath);
 
     if (cachedResult === true) return true;
 
     let result = false;
 
-    if (path.endsWith('.svg')) {
+    if (iconPath.endsWith('.svg')) {
+      if (path.basename(iconPath).startsWith('bg__')) {
+        return false;
+      }
+
       if (this.options.iconRegExp instanceof RegExp) {
-        result = this.options.iconRegExp.test(path);
+        result = this.options.iconRegExp.test(iconPath);
       }
     }
 
-    assetsTypeCacheMap.set(path, result);
+    assetsTypeCacheMap.set(iconPath, result);
 
     return result;
   }
