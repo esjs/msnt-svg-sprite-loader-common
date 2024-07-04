@@ -63,6 +63,9 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
       (compilation) => {
         const isProd = compilation.options.mode === 'production';
 
+        // we clear previous symbols because it may contain removed ones
+        this.svgCompiler.symbols = [];
+
         if (!this.options.spriteFilename) {
           this.options.spriteFilename = isProd
             ? this.options.spriteFilenameProd
