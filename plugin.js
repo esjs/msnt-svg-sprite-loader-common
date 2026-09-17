@@ -41,6 +41,12 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
        */
       removeIconAssets: true,
       /**
+       * Length of chunk hash (in bytes)
+       * 
+       * Defaults to 
+       */
+      chunkHashLength: undefined,
+      /**
        * Pattern for output file name.
        *
        * This will be set im
@@ -188,7 +194,9 @@ class MSNTSVGSpritePluginCommon extends SVGSpritePlugin {
       if (filename.includes('[chunkcode]')) {
         const content = spriteSymbols.map((symbol) => symbol.render()).join('');
 
-        const hash = hashFunc.createHash('md5').update(content).digest('hex');
+        const hash = hashFunc.createHash('shake256', {
+          outputLength: this.options.chunkHashLength
+        }).update(content).digest('hex');
 
         filename = filename.replace('[chunkcode]', hash);
       }
